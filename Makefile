@@ -24,7 +24,7 @@ clean:
 
 package:
 	@python3 setup.py sdist
-	@pex -P core -r requirements.txt -f dist -e core.main -o hab.pex --python-shebang='python3' --sh-boot --venv --venv-copies
+	@pex -P core -r requirements.txt -f dist -e core.main -o hab.pex --python-shebang='python3' --sh-boot --venv --venv-copies --venv-site-packages-copies
 
 .IGNORE: install_dev
 .PHONY: all check install_dev isort isort_check lint test
