@@ -152,7 +152,16 @@ class GitFetcher(Fetcher):
                             f'directory {target_dir} exist, try use "-f/--force" flag or remove it manually')
             else:
                 cmd = 'git clean -fd && git reset --hard'
-                await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
+                try:
+                    await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
+                except subprocess.CalledProcessError:
+                    logging.warning(
+                        f'A reset for {target_dir} has failed. This might caused by that '
+                        f'the target directory for {url} is occupied by another git repository. A clean'
+                        ' fetch is on the run.'
+                    )
+                    rmtree(source_dir)
+                    await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
 
         logging.debug(f'Fetch git repository {url if DEBUG else self.component.url} in {source_dir}')
         # fix reserved name in file path causing the checkout command complain "error: invalid path..." on windows
