@@ -19,7 +19,7 @@ from core.utils import (async_check_output, convert_git_url_to_http, create_temp
 
 
 async def fetch_in_cache_if_needed(
-    url, ref_spec, global_cache_dir, fetch_all=False
+    url, ref_spec, global_cache_dir, fetch_all=False, remote='origin'
 ):
     repo_name = re.split(r'/|:', url)[-1]
     repo_cache_dir = os.path.join(global_cache_dir, repo_name, hashlib.md5(url.encode()).hexdigest())
@@ -30,7 +30,7 @@ async def fetch_in_cache_if_needed(
     if not is_bare_git_repo(repo_cache_dir):
         cmd = f'git init --bare {repo_cache_dir}'
         await run_git_command(cmd, shell=True, cwd=global_cache_dir, stderr=subprocess.STDOUT)
-        cmd = 'git config remote.origin.url ' + url
+        cmd = f'git config remote.{remote}.url ' + url
         await run_git_command(cmd, shell=True, cwd=repo_cache_dir, stderr=subprocess.STDOUT)
         need_fetch = True
     elif fetch_all:
@@ -46,7 +46,7 @@ async def fetch_in_cache_if_needed(
 
     if need_fetch:
         logging.debug(f'update git cache in {repo_cache_dir}')
-        ref_spec = '+refs/heads/*:refs/remotes/origin/*'
+        ref_spec = f'+refs/heads/*:refs/remotes/{remote}/*'
         cmd = f'git fetch --force --progress --update-head-ok -- {url} {ref_spec}'
         await run_git_command(cmd, shell=True, cwd=repo_cache_dir, stderr=subprocess.STDOUT)
     return repo_cache_dir
@@ -117,12 +117,14 @@ class GitFetcher(Fetcher):
             await run_git_command(cmd, shell=True, stderr=subprocess.STDOUT)
             new_init = True
 
+        default_remote = getattr(self.component, 'remote', 'origin')
         remote = await run_git_command('git remote', shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
         remote = remote.strip()
         if not remote:
-            cmd = 'git config remote.origin.url ' + url
+            cmd = f'git config remote.{default_remote}.url ' + url
             await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
-            remote = 'origin'
+        
+        remote = default_remote
 
         # if a repository was fetched before git lfs install,
         # files tracked by lfs will be replaced by file pointer
@@ -183,7 +185,7 @@ class GitFetcher(Fetcher):
             ref_spec = f'+refs/tags/{self.component.tag}:refs/tag/{self.component.tag}'
             checkout_args = self.component.tag
         elif new_init:
-            remote = 'origin'
+            remote = default_remote
             cmd = f'git remote show {remote}'
             output = await run_git_command(
                 cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT, env={'LANG': 'en_US.UTF-8'}
@@ -209,7 +211,7 @@ class GitFetcher(Fetcher):
 
         fetch_all = self.component.fetch_mode == 'all'
         if self.component.is_root or fetch_all:
-            ref_spec = "'+refs/heads/*:refs/remotes/origin/*'"
+            ref_spec = f"'+refs/heads/*:refs/remotes/{remote}/*'"
             depth_arg = ""
         else:
             depth_arg = '--depth=1 --no-tags' if options.no_history else ''
@@ -217,8 +219,8 @@ class GitFetcher(Fetcher):
         if not options.disable_cache:
             global_cache_dir = os.path.expanduser(os.path.join(options.cache_dir, 'git'))
             global_cache_dir = os.path.realpath(os.path.expandvars(global_cache_dir))
-            reference_objects_dir = os.path.join(
-                await fetch_in_cache_if_needed(url, ref_spec, global_cache_dir, fetch_all=fetch_all), "objects"
+            reference_objects_dir = os.path.join(await fetch_in_cache_if_needed(
+                url, ref_spec, global_cache_dir, fetch_all=fetch_all, remote=remote), "objects"
             )
             await set_git_alternates(source_dir, reference_objects_dir)
 
@@ -233,16 +235,7 @@ class GitFetcher(Fetcher):
             cmd = f'git --work-tree={target_dir} checkout FETCH_HEAD -- .'
         else:
             cmd = f'git checkout {checkout_args}'
-        try:
-            await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError:
-            logging.warning(
-                f'A checkout for {target_dir} has failed. This might caused by that '
-                f'the target directory for {url} is occupied by another git repository. A clean'
-                ' fetch is on the run.'
-            )
-            rmtree(source_dir)
-            await self.fetch(root_dir, options, *args, **kwargs)
+        await run_git_command(cmd, shell=True, cwd=source_dir, stderr=subprocess.STDOUT)
 
         if getattr(self.component, 'enable_lfs', False):
             try:
