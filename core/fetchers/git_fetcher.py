@@ -86,6 +86,18 @@ async def apply_patches(patch_path: str, cwd: str):
         raise HabitatException(f'{e.output.decode()}. This might caused by conflicts between patches and code.')
 
 
+def resolve_extra_configs(extra_config):
+    if extra_config is None:
+        return ""
+    elif isinstance(extra_config, str):
+        return f"-c {extra_config}"
+    elif isinstance(extra_config, dict):
+        if all(not isinstance(v, dict) for v in extra_config.values()):
+            return ' '.join([f'-c {k}="{v}"' for k, v in extra_config.items()])
+        else:
+            raise HabitatException('extra_git_config must be a string or a single level dict.')
+
+
 class GitFetcher(Fetcher):
 
     async def fetch(self, root_dir, options, *args, **kwargs):
@@ -222,7 +234,8 @@ class GitFetcher(Fetcher):
             )
             await set_git_alternates(source_dir, reference_objects_dir)
 
-        cmd = f'git fetch {depth_arg} --force --progress --update-head-ok -- {url} {ref_spec}'
+        extra_config = resolve_extra_configs(getattr(self.component, 'extra_config', None))
+        cmd = f'git {extra_config} fetch {depth_arg} --force --progress --update-head-ok -- {url} {ref_spec}'
         await run_git_command(cmd, shell=True, cwd=source_dir, retry=1, stderr=subprocess.STDOUT)
 
         if options.raw and not os.path.exists(target_dir):

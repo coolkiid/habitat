@@ -37,6 +37,10 @@ class GitDependency(Component):
         "patches": {
             "type": Union[str, list],
             "optional": True,
+        },
+        "extra_config": {
+            "type": Union[str, dict],
+            "optional": True
         }
     }
     source_attributes = ['url']
