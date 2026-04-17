@@ -29,7 +29,7 @@ class GitCacheInfo(NamedTuple):
     repo_cache_dir: Optional[str]
 
 
-async def fetch_in_cache_if_needed(url, ref_spec, global_cache_dir, fetch_all=False):
+async def fetch_in_cache_if_needed(url, ref_spec, global_cache_dir, fetch_all=False, enable_submodule=False):
     repo_name = re.split(r"/|:", url)[-1]
     repo_cache_dir = os.path.join(
         global_cache_dir, repo_name, hashlib.md5(url.encode()).hexdigest()
@@ -69,7 +69,12 @@ async def fetch_in_cache_if_needed(url, ref_spec, global_cache_dir, fetch_all=Fa
 
     if need_fetch:
         logging.debug(f"update git cache in {repo_cache_dir}")
-        fetch_args = ["--force", "--progress", "--update-head-ok", "--no-recurse-submodules"]
+
+        # Add --no-recurse-submodules if enable_submodule is False
+        fetch_args = ["--force", "--progress", "--update-head-ok"]
+        if not enable_submodule:
+            fetch_args.append("--no-recurse-submodules")
+
         cmd = f"git fetch {' '.join(fetch_args)} -- {url} {ref_spec}"
         try:
             await run_git_command(
@@ -381,7 +386,11 @@ class GitFetcher(Fetcher):
                     _, cached_ref = ref_spec.split(":", 1)
                     checkout_ref_spec = f"{cached_ref}:{cached_ref.lstrip('+')}"
 
-            fetch_args = ["--force", "--progress", "--update-head-ok", "--no-recurse-submodules"]
+            # Add --no-recurse-submodules if enable_submodule is False
+            fetch_args = ["--force", "--progress", "--update-head-ok"]
+            if not getattr(self.component, "enable_submodule", None):
+                fetch_args.append("--no-recurse-submodules")
+
             cmd = f"git fetch {depth_arg} {' '.join(fetch_args)} -- {url} {checkout_ref_spec}"
             await run_git_command(
                 cmd, shell=True, cwd=source_dir, retry=1, stderr=subprocess.STDOUT

@@ -32,6 +32,11 @@ class GitDependency(Component):
             "type": Union[str, list],
             "optional": True,
         },
+        "enable_submodule": {
+            "type": bool,
+            "optional": True,
+            "default": None,
+        }
     }
     source_attributes = ["url"]
     source_stamp_attributes = ["branch", "commit", "tag"]
